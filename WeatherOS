@@ -20,10 +20,13 @@
   <div class="w-full max-w-md bg-white rounded-2xl shadow-xl p-6 space-y-4 text-center">
     <h1 class="text-2xl font-bold">🌦️ 날씨 정보 앱</h1>
 
-    <input id="cityInput" type="text" placeholder="도시 입력 후 Enter" class="w-full px-4 py-2 border rounded-md" />
+    <input id="cityInput" type="text" placeholder="도시 이름 (한글 가능)" class="w-full px-4 py-2 border rounded-md" />
     <button onclick="searchCity()" class="bg-blue-500 text-white px-4 py-2 rounded-md w-full">검색</button>
 
     <div id="weather" class="space-y-2 mt-4 text-gray-700"></div>
+
+    <div id="savedCities" class="mt-4 text-left space-y-2"></div>
+
     <div id="map" class="mt-4"></div>
   </div>
 
@@ -31,7 +34,7 @@
 
   <script>
     const API_KEY = '87362b1762ed0f343516e4d960a2d417';
-    let map, marker;
+    let map, marker, currentCity = '', currentCoords = {};
 
     function initMap(lat, lon) {
       if (!map) {
@@ -39,7 +42,6 @@
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
           attribution: '&copy; OpenStreetMap contributors'
         }).addTo(map);
-
         marker = L.marker([lat, lon]).addTo(map);
       } else {
         map.setView([lat, lon], 10);
@@ -63,43 +65,106 @@
     }
 
     function searchCity() {
-      const city = document.getElementById("cityInput").value;
+      const city = document.getElementById("cityInput").value.trim();
       if (!city) return;
-      fetch(`https://api.openweathermap.org/data/2.5/weather?q=${city}&appid=${API_KEY}&units=metric&lang=kr`)
+
+      fetch(`https://api.openweathermap.org/geo/1.0/direct?q=${city},KR&limit=1&appid=${API_KEY}`)
         .then(res => res.json())
         .then(data => {
-          const { name } = data;
-          const { temp } = data.main;
+          if (data.length === 0) {
+            alert("도시를 찾을 수 없습니다.");
+            return;
+          }
+
+          const { name, lat, lon } = data[0];
+          currentCity = name;
+          currentCoords = { lat, lon };
+
+          fetch(`https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&units=metric&lang=kr&appid=${API_KEY}`)
+            .then(res => res.json())
+            .then(weatherData => {
+              const temp = Math.round(weatherData.main.temp); // 온도 소수점 제거
+              const desc = weatherData.weather[0].description;
+              const icon = weatherData.weather[0].icon;
+              const main = weatherData.weather[0].main;
+
+              updateBackground(main);
+              initMap(lat, lon);
+
+              document.getElementById("weather").innerHTML = `
+                <h2 class="text-xl font-semibold">📍 ${name}
+                  <button onclick="saveCity()" title="즐겨찾기" class="ml-2">⭐</button>
+                </h2>
+                <img src="https://openweathermap.org/img/wn/${icon}@2x.png" alt="${desc}" class="mx-auto w-16" />
+                <p class="text-lg">${desc}</p>
+                <p class="text-lg">🌡️ ${temp}°C</p>
+              `;
+            });
+        });
+    }
+
+    document.getElementById("cityInput").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        searchCity();
+      }
+    });
+
+    function loadSavedCities() {
+      const saved = JSON.parse(localStorage.getItem('cities') || '[]');
+      const list = saved.map(city => `
+        <div class="flex justify-between bg-gray-100 rounded px-3 py-1">
+          <span class="cursor-pointer text-blue-600" onclick="searchSavedCity('${city.name}', ${city.lat}, ${city.lon})">${city.name}</span>
+          <button class="text-red-500" onclick="deleteCity('${city.name}')">🗑</button>
+        </div>
+      `).join('');
+      document.getElementById("savedCities").innerHTML = saved.length > 0 ? `<h3 class="font-semibold">⭐ 즐겨찾기 도시</h3>${list}` : '';
+    }
+
+    function saveCity() {
+      const saved = JSON.parse(localStorage.getItem('cities') || '[]');
+      if (!saved.find(c => c.name === currentCity)) {
+        saved.push({ name: currentCity, lat: currentCoords.lat, lon: currentCoords.lon });
+        localStorage.setItem('cities', JSON.stringify(saved));
+        loadSavedCities();
+      }
+    }
+
+    function deleteCity(name) {
+      let saved = JSON.parse(localStorage.getItem('cities') || '[]');
+      saved = saved.filter(c => c.name !== name);
+      localStorage.setItem('cities', JSON.stringify(saved));
+      loadSavedCities();
+    }
+
+    function searchSavedCity(name, lat, lon) {
+      document.getElementById("cityInput").value = name;
+      currentCity = name;
+      currentCoords = { lat, lon };
+      fetch(`https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&units=metric&lang=kr&appid=${API_KEY}`)
+        .then(res => res.json())
+        .then(data => {
+          const temp = Math.round(data.main.temp);
           const desc = data.weather[0].description;
           const icon = data.weather[0].icon;
           const main = data.weather[0].main;
-          const lat = data.coord.lat;
-          const lon = data.coord.lon;
 
           updateBackground(main);
           initMap(lat, lon);
 
           document.getElementById("weather").innerHTML = `
-            <h2 class="text-xl font-semibold">📍 ${name}</h2>
+            <h2 class="text-xl font-semibold">📍 ${name}
+              <button onclick="saveCity()" title="즐겨찾기" class="ml-2">⭐</button>
+            </h2>
             <img src="https://openweathermap.org/img/wn/${icon}@2x.png" alt="${desc}" class="mx-auto w-16" />
             <p class="text-lg">${desc}</p>
             <p class="text-lg">🌡️ ${temp}°C</p>
           `;
-        })
-        .catch(() => {
-          alert("도시를 찾을 수 없습니다.");
         });
     }
 
-    document.getElementById("cityInput").addEventListener("keydown", function (event) {
-      if (event.key === "Enter") {
-        searchCity();
-      }
-    });
-
     window.onload = () => {
       if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition((pos) => {
+        navigator.geolocation.getCurrentPosition(pos => {
           const lat = pos.coords.latitude;
           const lon = pos.coords.longitude;
           initMap(lat, lon);
@@ -107,6 +172,7 @@
       } else {
         initMap(37.5665, 126.9780);
       }
+      loadSavedCities();
     };
   </script>
 </body>
