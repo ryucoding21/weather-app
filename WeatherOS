@@ -76,30 +76,35 @@
             return;
           }
 
-          const { name, lat, lon } = data[0];
-          currentCity = name;
-          currentCoords = { lat, lon };
+          const location = data[0];
+          const name_ko = location.local_names?.ko || location.name;
+          currentCity = name_ko;
+          currentCoords = { lat: location.lat, lon: location.lon };
 
-          fetch(`https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&units=metric&lang=kr&appid=${API_KEY}`)
-            .then(res => res.json())
-            .then(weatherData => {
-              const temp = Math.round(weatherData.main.temp); // 온도 소수점 제거
-              const desc = weatherData.weather[0].description;
-              const icon = weatherData.weather[0].icon;
-              const main = weatherData.weather[0].main;
+          getWeatherByCoords(currentCoords.lat, currentCoords.lon, currentCity);
+        });
+    }
 
-              updateBackground(main);
-              initMap(lat, lon);
+    function getWeatherByCoords(lat, lon, cityLabel) {
+      fetch(`https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&units=metric&lang=kr&appid=${API_KEY}`)
+        .then(res => res.json())
+        .then(weatherData => {
+          const temp = Math.round(weatherData.main.temp);
+          const desc = weatherData.weather[0].description;
+          const icon = weatherData.weather[0].icon;
+          const main = weatherData.weather[0].main;
 
-              document.getElementById("weather").innerHTML = `
-                <h2 class="text-xl font-semibold">📍 ${name}
-                  <button onclick="saveCity()" title="즐겨찾기" class="ml-2">⭐</button>
-                </h2>
-                <img src="https://openweathermap.org/img/wn/${icon}@2x.png" alt="${desc}" class="mx-auto w-16" />
-                <p class="text-lg">${desc}</p>
-                <p class="text-lg">🌡️ ${temp}°C</p>
-              `;
-            });
+          updateBackground(main);
+          initMap(lat, lon);
+
+          document.getElementById("weather").innerHTML = `
+            <h2 class="text-xl font-semibold">📍 ${cityLabel}
+              <button onclick="saveCity()" title="즐겨찾기" class="ml-2">⭐</button>
+            </h2>
+            <img src="https://openweathermap.org/img/wn/${icon}@2x.png" alt="${desc}" class="mx-auto w-16" />
+            <p class="text-lg">${desc}</p>
+            <p class="text-lg">🌡️ ${temp}°C</p>
+          `;
         });
     }
 
@@ -108,17 +113,6 @@
         searchCity();
       }
     });
-
-    function loadSavedCities() {
-      const saved = JSON.parse(localStorage.getItem('cities') || '[]');
-      const list = saved.map(city => `
-        <div class="flex justify-between bg-gray-100 rounded px-3 py-1">
-          <span class="cursor-pointer text-blue-600" onclick="searchSavedCity('${city.name}', ${city.lat}, ${city.lon})">${city.name}</span>
-          <button class="text-red-500" onclick="deleteCity('${city.name}')">🗑</button>
-        </div>
-      `).join('');
-      document.getElementById("savedCities").innerHTML = saved.length > 0 ? `<h3 class="font-semibold">⭐ 즐겨찾기 도시</h3>${list}` : '';
-    }
 
     function saveCity() {
       const saved = JSON.parse(localStorage.getItem('cities') || '[]');
@@ -136,30 +130,20 @@
       loadSavedCities();
     }
 
-    function searchSavedCity(name, lat, lon) {
-      document.getElementById("cityInput").value = name;
-      currentCity = name;
-      currentCoords = { lat, lon };
-      fetch(`https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&units=metric&lang=kr&appid=${API_KEY}`)
-        .then(res => res.json())
-        .then(data => {
-          const temp = Math.round(data.main.temp);
-          const desc = data.weather[0].description;
-          const icon = data.weather[0].icon;
-          const main = data.weather[0].main;
-
-          updateBackground(main);
-          initMap(lat, lon);
-
-          document.getElementById("weather").innerHTML = `
-            <h2 class="text-xl font-semibold">📍 ${name}
-              <button onclick="saveCity()" title="즐겨찾기" class="ml-2">⭐</button>
-            </h2>
-            <img src="https://openweathermap.org/img/wn/${icon}@2x.png" alt="${desc}" class="mx-auto w-16" />
-            <p class="text-lg">${desc}</p>
-            <p class="text-lg">🌡️ ${temp}°C</p>
-          `;
-        });
+    function loadSavedCities() {
+      const saved = JSON.parse(localStorage.getItem('cities') || '[]');
+      const container = document.getElementById("savedCities");
+      if (saved.length === 0) {
+        container.innerHTML = '';
+        return;
+      }
+      const list = saved.map(c => `
+        <div class="flex justify-between bg-gray-100 rounded px-3 py-1">
+          <span class="cursor-pointer text-blue-600" onclick="getWeatherByCoords(${c.lat}, ${c.lon}, '${c.name}')">${c.name}</span>
+          <button class="text-red-500" onclick="deleteCity('${c.name}')">🗑</button>
+        </div>
+      `).join('');
+      container.innerHTML = `<h3 class="font-semibold">⭐ 즐겨찾기 도시</h3>${list}`;
     }
 
     window.onload = () => {
