@@ -15,7 +15,7 @@
   <div class="w-full max-w-md bg-white rounded-2xl shadow-xl p-6 space-y-4">
     <h1 class="text-2xl font-bold text-center">🌤️ 날씨 정보 웹앱</h1>
 
-    <p id="status" class="text-sm text-gray-600 text-center"> 도시명을 입력하거나 지도를 클릭하여 날씨를 알 수 있습니다.</p>
+    <p id="status" class="text-sm text-gray-600 text-center">도시명을 입력하거나 지도를 클릭하여 날씨를 알 수 있습니다.</p>
 
     <div class="flex gap-2">
       <input id="cityInput" type="text" placeholder="도시 이름 입력" class="w-full px-4 py-2 border rounded-md">
@@ -24,6 +24,12 @@
 
     <div id="weather" class="space-y-2 text-center text-gray-700"></div>
 
+    <div class="flex justify-between items-center">
+      <button onclick="saveCurrentLocation()" class="bg-green-500 text-white px-4 py-1 rounded-md">위치 저장</button>
+    </div>
+
+    <div id="savedLocations" class="mt-4 space-y-2"></div>
+
     <div id="map" class="mt-4"></div>
   </div>
 
@@ -31,7 +37,7 @@
 
   <script>
     const API_KEY = '87362b1762ed0f343516e4d960a2d417';
-    let map, marker;
+    let map, marker, currentLat, currentLon, currentCity = '';
 
     function initMap(lat, lon) {
       if (!map) {
@@ -42,6 +48,8 @@
 
         map.on('click', function (e) {
           const { lat, lng } = e.latlng;
+          currentLat = lat;
+          currentLon = lng;
           if (marker) map.removeLayer(marker);
           marker = L.marker([lat, lng]).addTo(map);
           document.getElementById('status').textContent = `🗺️ 선택한 위치의 날씨입니다.`;
@@ -59,6 +67,8 @@
         navigator.geolocation.getCurrentPosition((pos) => {
           const lat = pos.coords.latitude;
           const lon = pos.coords.longitude;
+          currentLat = lat;
+          currentLon = lon;
           getWeather(lat, lon);
           initMap(lat, lon);
         }, () => {
@@ -66,19 +76,23 @@
           initMap(37.5665, 126.9780);
         });
       }
+      loadSavedLocations();
     };
 
     function searchCityWeather() {
       const city = document.getElementById('cityInput').value;
       if (!city) return;
-      fetch(`https://api.openweathermap.org/geo/1.0/direct?q=${city}&limit=1&appid=${API_KEY}`)
+      fetch(`https://api.openweathermap.org/geo/1.0/direct?q=${city},KR&limit=1&appid=${API_KEY}`)
         .then(res => res.json())
         .then(data => {
           if (data.length === 0) {
             alert('도시를 찾을 수 없습니다!');
             return;
           }
-          const { lat, lon } = data[0];
+          const { lat, lon, name } = data[0];
+          currentLat = lat;
+          currentLon = lon;
+          currentCity = name;
           getWeather(lat, lon);
           initMap(lat, lon);
         });
@@ -89,6 +103,7 @@
         fetch(`https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&units=metric&lang=kr&appid=${API_KEY}`).then(res => res.json()),
         fetch(`https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lon}&units=metric&cnt=24&lang=kr&appid=${API_KEY}`).then(res => res.json())
       ]).then(([current, forecast]) => {
+        currentCity = current.name;
         showWeather(current, forecast);
       });
     }
@@ -101,6 +116,7 @@
         .map(item => `
           <div class="border rounded p-2 bg-gray-100">
             <p class="font-semibold">${new Date(item.dt_txt).toLocaleDateString('ko-KR')}</p>
+            <img src="https://openweathermap.org/img/wn/${item.weather[0].icon}@2x.png" alt="${item.weather[0].description}" class="mx-auto w-10" />
             <p>${item.weather[0].description}</p>
             <p>🌡️ ${item.main.temp}°C</p>
           </div>
@@ -109,9 +125,51 @@
       weatherDiv.innerHTML = `
         <h2 class="text-xl font-semibold">📍 ${current.name}</h2>
         <p class="text-lg">${current.weather[0].description} / 🌡️ ${current.main.temp}°C</p>
+        <img src="https://openweathermap.org/img/wn/${current.weather[0].icon}@2x.png" alt="${current.weather[0].description}" class="mx-auto w-16" />
         <h3 class="mt-4 font-semibold">🗓️ 3일 예보</h3>
         <div class="grid grid-cols-3 gap-2 mt-2">${forecastHTML}</div>
       `;
+    }
+
+    function saveCurrentLocation() {
+      if (!currentLat || !currentLon || !currentCity) return;
+      const saved = JSON.parse(localStorage.getItem('locations') || '[]');
+      if (!saved.find(loc => loc.city === currentCity)) {
+        saved.push({ city: currentCity, lat: currentLat, lon: currentLon });
+        localStorage.setItem('locations', JSON.stringify(saved));
+        loadSavedLocations();
+      }
+    }
+
+    function loadSavedLocations() {
+      const saved = JSON.parse(localStorage.getItem('locations') || '[]');
+      const container = document.getElementById('savedLocations');
+      container.innerHTML = '<h3 class="font-semibold">📌 저장된 위치</h3>';
+      saved.forEach((loc, index) => {
+        const div = document.createElement('div');
+        div.className = 'flex justify-between items-center px-2 py-1 bg-gray-100 rounded';
+        div.innerHTML = `
+          <span class="cursor-pointer text-blue-600" onclick="selectSavedLocation(${loc.lat}, ${loc.lon})">
+            ${loc.city}
+          </span>
+          <button onclick="deleteSavedLocation(${index})" class="text-red-500">🗑</button>
+        `;
+        container.appendChild(div);
+      });
+    }
+
+    function selectSavedLocation(lat, lon) {
+      currentLat = lat;
+      currentLon = lon;
+      getWeather(lat, lon);
+      initMap(lat, lon);
+    }
+
+    function deleteSavedLocation(index) {
+      const saved = JSON.parse(localStorage.getItem('locations') || '[]');
+      saved.splice(index, 1);
+      localStorage.setItem('locations', JSON.stringify(saved));
+      loadSavedLocations();
     }
   </script>
 </body>
